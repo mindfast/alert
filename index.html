@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>РљР°СЂС‚Р° Р·РіР°РґСѓРІР°РЅСЊ</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    #map { height: 100vh; width: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const map = L.map('map').setView([50.45, 30.5], 9);
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: 'В© OpenStreetMap contributors'
+      }).addTo(map);
+
+      const markerLayers = {};         // name -> marker
+      const markerTimestamps = {};     // name -> timestamp
+      const allPoints = {};            // name -> latlng
+      const lastMentioned = {};        // name -> timestamp (СѓРїСЂР°РІР»СЏРµС‚ СЃРїР°РјРѕРј)
+
+      let pointsLoaded = false;
+
+      // Р—Р°РіСЂСѓР¶Р°РµРј С‚РѕС‡РєРё Рё РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРЅС‹Рµ РјР°СЂРєРµСЂС‹
+      const savedTimestamps = JSON.parse(localStorage.getItem("savedMarkerTimestamps") || "{}");
+
+      fetch('kiev_places_points.geojson')
+        .then(r => r.json())
+        .then(data => {
+          data.features.forEach(f => {
+            const name = f.properties.name;
+            const [lng, lat] = f.geometry.coordinates;
+            allPoints[name] = L.latLng(lat, lng);
+          });
+
+          for (const name in savedTimestamps) {
+            const ts = savedTimestamps[name];
+            if (Date.now() - ts < 300000 && allPoints[name]) {
+              markerTimestamps[name] = ts;
+              const marker = L.circleMarker(allPoints[name], {
+                radius: 6,
+                fillColor: 'red',
+                color: 'black',
+                weight: 1,
+                fillOpacity: 0.9
+              }).bindPopup(name);
+              marker.addTo(map);
+              markerLayers[name] = marker;
+            }
+          }
+
+          pointsLoaded = true;
+        });
+
+      function showMarker(name) {
+        const latlng = allPoints[name];
+        if (!latlng) return;
+
+        const now = Date.now();
+
+        // РџСЂРµРґРѕС‚РІСЂР°С‰Р°РµРј С‡Р°СЃС‚РѕРµ РѕР±РЅРѕРІР»РµРЅРёРµ РѕС‚ РѕРґРЅРѕРіРѕ Рё С‚РѕРіРѕ Р¶Рµ РёСЃС‚РѕС‡РЅРёРєР°
+        if (lastMentioned[name] && now - lastMentioned[name] < 5000) return;
+        lastMentioned[name] = now;
+
+        // РћР±РЅРѕРІР»СЏРµРј С‚РѕР»СЊРєРѕ РµСЃР»Рё РїСЂРѕС€Р»Рѕ >5 СЃРµРє СЃ РїРѕСЃР»РµРґРЅРµРіРѕ РѕР±РЅРѕРІР»РµРЅРёСЏ С‚Р°Р№РјРµСЂР°
+        if (!markerTimestamps[name] || now - markerTimestamps[name] > 5000) {
+          markerTimestamps[name] = now;
+
+          const saved = JSON.parse(localStorage.getItem("savedMarkerTimestamps") || "{}");
+          saved[name] = now;
+          localStorage.setItem("savedMarkerTimestamps", JSON.stringify(saved));
+        }
+
+        if (!markerLayers[name]) {
+          const marker = L.circleMarker(latlng, {
+            radius: 6,
+            fillColor: 'red',
+            color: 'black',
+            weight: 1,
+            fillOpacity: 0.9
+          }).bindPopup(name);
+          marker.addTo(map);
+          markerLayers[name] = marker;
+        } else {
+          // РћР±РЅРѕРІР»СЏРµРј СЃС‚РёР»СЊ, РµСЃР»Рё РјР°СЂРєРµСЂ СѓР¶Рµ РµСЃС‚СЊ
+          markerLayers[name].setStyle({
+            fillColor: 'red',
+            fillOpacity: 0.9
+          });
+        }
+      }
+
+      function updateMarkersFade() {
+        if (!pointsLoaded) return;
+
+        const now = Date.now();
+        console.log("[~] РћР±РЅРѕРІР»РµРЅРёРµ РјР°СЂРєРµСЂРѕРІ:");
+
+        Object.keys(markerLayers).forEach(name => {
+          const marker = markerLayers[name];
+          const ts = markerTimestamps[name];
+          const elapsed = (now - ts) / 1000;
+
+          console.log(` - ${name}: ${Math.floor(elapsed)} СЃРµРє`);
+
+          if (elapsed < 120) {
+            marker.setStyle({ fillOpacity: 0.9 });
+          } else if (elapsed < 300) {
+            const progress = (elapsed - 120) / 180;
+            const opacity = 0.9 * (1 - progress);
+            marker.setStyle({ fillOpacity: Math.max(0, opacity) });
+          } else {
+            map.removeLayer(marker);
+            delete markerLayers[name];
+            delete markerTimestamps[name];
+            delete lastMentioned[name];
+
+            const saved = JSON.parse(localStorage.getItem("savedMarkerTimestamps") || "{}");
+            delete saved[name];
+            localStorage.setItem("savedMarkerTimestamps", JSON.stringify(saved));
+
+            console.log(` в›” РЈРґР°Р»С‘РЅ РјР°СЂРєРµСЂ: ${name}`);
+          }
+        });
+      }
+
+      function checkHighlights() {
+        if (!pointsLoaded) return;
+
+        fetch('highlight_queue.json?ts=' + Date.now())
+          .then(r => r.json())
+          .then(names => {
+            names.forEach(name => showMarker(name));
+          })
+          .catch(() => {});
+      }
+
+      setInterval(checkHighlights, 5000);     // РїРѕР»СѓС‡Р°РµРј РЅРѕРІС‹Рµ СѓРїРѕРјРёРЅР°РЅРёСЏ
+      setInterval(updateMarkersFade, 1000);   // РѕР±РЅРѕРІР»СЏРµРј РІРёР·СѓР°Р»СЊРЅРѕРµ Р·Р°С‚СѓС…Р°РЅРёРµ
+    });
+  </script>
+</body>
+</html>
