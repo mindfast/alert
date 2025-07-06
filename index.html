@@ -24,16 +24,18 @@
       const markerLayers = {};         // name -> marker
       const markerTimestamps = {};     // name -> timestamp
       const allPoints = {};            // name -> latlng
-      const lastMentioned = {};        // name -> timestamp (управляет спамом)
+      const lastMentioned = {};        // name -> timestamp
 
       let pointsLoaded = false;
 
       const savedTimestamps = JSON.parse(localStorage.getItem("savedMarkerTimestamps") || "{}");
 
-      // ✅ Указываем NGROK URL — ОБЯЗАТЕЛЬНО!!!
-      const BASE_URL = "https://5b05-185-246-87-36.ngrok-free.app";
-
-      fetch(BASE_URL + '/kiev_places_points.geojson')
+      // Загрузка GeoJSON с заголовком ngrok-skip-browser-warning
+      fetch('https://5b05-185-246-87-36.ngrok-free.app/kiev_places_points.geojson', {
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        }
+      })
         .then(r => r.json())
         .then(data => {
           data.features.forEach(f => {
@@ -66,7 +68,6 @@
         if (!latlng) return;
 
         const now = Date.now();
-
         if (lastMentioned[name] && now - lastMentioned[name] < 5000) return;
         lastMentioned[name] = now;
 
@@ -100,14 +101,11 @@
         if (!pointsLoaded) return;
 
         const now = Date.now();
-        console.log("[~] Обновление маркеров:");
 
         Object.keys(markerLayers).forEach(name => {
           const marker = markerLayers[name];
           const ts = markerTimestamps[name];
           const elapsed = (now - ts) / 1000;
-
-          console.log(` - ${name}: ${Math.floor(elapsed)} сек`);
 
           if (elapsed < 120) {
             marker.setStyle({ fillOpacity: 0.9 });
@@ -124,8 +122,6 @@
             const saved = JSON.parse(localStorage.getItem("savedMarkerTimestamps") || "{}");
             delete saved[name];
             localStorage.setItem("savedMarkerTimestamps", JSON.stringify(saved));
-
-            console.log(` ⛔ Удалён маркер: ${name}`);
           }
         });
       }
@@ -133,7 +129,11 @@
       function checkHighlights() {
         if (!pointsLoaded) return;
 
-        fetch(BASE_URL + '/highlight_queue.json?ts=' + Date.now())
+        fetch('https://5b05-185-246-87-36.ngrok-free.app/highlight_queue.json?ts=' + Date.now(), {
+          headers: {
+            'ngrok-skip-browser-warning': 'true'
+          }
+        })
           .then(r => r.json())
           .then(names => {
             names.forEach(name => showMarker(name));
@@ -141,8 +141,8 @@
           .catch(() => {});
       }
 
-      setInterval(checkHighlights, 5000);     // получаем новые упоминания
-      setInterval(updateMarkersFade, 1000);   // обновляем визуальное затухание
+      setInterval(checkHighlights, 5000);
+      setInterval(updateMarkersFade, 1000);
     });
   </script>
 </body>
